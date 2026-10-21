@@ -1,0 +1,91 @@
+# ---------------------------------------------------------------------------
+# Flutter / Dart
+# ---------------------------------------------------------------------------
+# 注意：pubspec.lock **不**被忽略。Flutter 官方约定应用程序应提交锁文件，
+# 以保证团队成员与 CI 拉取到完全一致的依赖版本。
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+coverage/
+doc/api/
+**/doc/api/
+**/ios/Flutter/.last_build_id
+
+# Flutter 版本管理工具生成的元数据（合并到 main 时通常不需要）
+.fvm/
+
+# Widget Preview
+.widget_preview/
+
+# ---------------------------------------------------------------------------
+# 杂项
+# ---------------------------------------------------------------------------
+*.class
+*.pyc
+*.swp
+*.log
+*.tmp
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+.DS_Store
+Thumbs.db
+
+# ---------------------------------------------------------------------------
+# IDE / 编辑器
+# ---------------------------------------------------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+# .vscode/ 默认不忽略：其中的启动配置与任务通常需要纳入版本管理
+
+# ---------------------------------------------------------------------------
+# 符号化与混淆产物
+# ---------------------------------------------------------------------------
+app.*.symbols
+app.*.map.json
+
+# ---------------------------------------------------------------------------
+# Android（flutter create . 生成后适用）
+# ---------------------------------------------------------------------------
+android/.gradle/
+android/local.properties
+android/key.properties
+android/app/debug/
+android/app/profile/
+android/app/release/
+*.jks
+*.keystore
+
+# ---------------------------------------------------------------------------
+# iOS / macOS（flutter create . 生成后适用）
+# ---------------------------------------------------------------------------
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/Generated.xcconfig
+macos/Pods/
+macos/Flutter/ephemeral/
+
+# ---------------------------------------------------------------------------
+# Windows / Linux 构建产物
+# ---------------------------------------------------------------------------
+windows/flutter/ephemeral/
+linux/flutter/ephemeral/
+
+# ---------------------------------------------------------------------------
+# 本地环境
+# ---------------------------------------------------------------------------
+.env
+.env.local
