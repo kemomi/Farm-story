@@ -1,7 +1,7 @@
 name: farm_game
 description: 横版牧场模拟游戏
 publish_to: 'none'
-version: 1.1.0+2
+version: 0.0.1A+1
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
