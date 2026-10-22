@@ -24,6 +24,8 @@ import '../systems/quest_system.dart';
 import '../ui/bottom_bar.dart';
 import '../ui/top_bar.dart';
 import 'camera.dart';
+import '../systems/audio_system.dart';
+import '../systems/effect_system.dart';
 
 /// 游戏世界主组件。
 class GameWorld extends StatefulWidget {
@@ -145,6 +147,15 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
   /// 随机数发生器。
   final math.Random rng = math.Random();
 
+  /// 音频系统：BGM 与音效。
+  final AudioSystem audio = AudioSystem();
+
+  /// 粒子特效系统。
+  final EffectSystem effects = EffectSystem();
+
+  /// 动画计时器（累计真实秒数，驱动摇摆/涟漪/云朵等循环动画）。
+  double animTime = 0;
+
   // ------------------------------------------------------------------ 运行时状态
 
   /// 游戏内累计分钟数（0 ~ 1440）。
@@ -236,11 +247,13 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
     super.initState();
     camera.snapTo(player.x, player.y);
     _ticker = createTicker(_onTick)..start();
+    audio.init();
   }
 
   @override
   void dispose() {
     _ticker.dispose();
+    audio.dispose();
     super.dispose();
   }
 
@@ -263,6 +276,10 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
 
   void _update(double dt) {
     if (dt <= 0) return;
+
+    // 0) 动画计时与粒子推进
+    animTime += dt;
+    effects.update(dt);
 
     // 1) 玩家移动插值
     player.update(dt);
@@ -411,6 +428,12 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
 
   // ------------------------------------------------------------------ 田地操作
 
+  /// 计算田块世界坐标中心。
+  (double, double) _tileWorldPos(int col, int row) => (
+        kFieldOriginX + col * fields.tileSize + fields.tileSize / 2,
+        kFieldOriginY + row * fields.tileSize + fields.tileSize / 2,
+      );
+
   /// 执行田块操作（玩家已走到田块上）。
   void _performTileAction(int col, int row) {
     final FieldTile? tile = fields.tileAt(col, row);
@@ -425,6 +448,9 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
       final FieldResult r = fields.clearWithered(col, row);
       showToast(r.message, duration: 2);
       player.playAction(PlayerAction.hoeing);
+      final (double wx, double wy) = _tileWorldPos(col, row);
+      effects.hoe(wx, wy);
+      audio.playSfx('hoe');
       return;
     }
 
@@ -435,6 +461,9 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
         if (r.success) {
           player.playAction(PlayerAction.hoeing);
           questSystem.onHoe();
+          final (double wx, double wy) = _tileWorldPos(col, row);
+          effects.hoe(wx, wy);
+          audio.playSfx('hoe');
         }
         break;
       case ToolType.seed:
@@ -454,6 +483,9 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
         if (r.success) {
           player.playAction(PlayerAction.planting);
           questSystem.onPlant(selectedCrop!.id);
+          final (double wx, double wy) = _tileWorldPos(col, row);
+          effects.plant(wx, wy);
+          audio.playSfx('plant');
         }
         break;
       case ToolType.tool:
@@ -488,6 +520,11 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
     if (r.success) {
       if (r.staminaCost > 0) player.useStamina(r.staminaCost);
       player.playAction(PlayerAction.harvesting);
+      final (double wx, double wy) = _tileWorldPos(col, row);
+      effects.harvest(wx, wy);
+      effects.coin(wx, wy - 20);
+      audio.playSfx('harvest');
+      audio.playSfx('coin');
       // 收获进入背包，需在背包中出售换取金币。
       if (crop != null) {
         bag[crop.id] = (bag[crop.id] ?? 0) + 1;
@@ -672,6 +709,7 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
     fields.updateHours(hours);
     gameMinutes = 6 * 60;
     _onNewDay();
+    audio.playSfx('sleep');
     showToast('睡了一觉，体力完全恢复！', duration: 3);
   }
 
@@ -1092,7 +1130,11 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
     if (r.staminaReward > 0) player.restoreStamina(r.staminaReward);
     if (r.expReward > 0) {
       final int lv = player.gainExp(r.expReward);
-      if (lv > 0) showToast('等级提升！现在是 Lv.${player.level}', duration: 4);
+      if (lv > 0) {
+        effects.levelUp(player.x, player.y - 30);
+        audio.playSfx('levelup');
+        showToast('等级提升！现在是 Lv.${player.level}', duration: 4);
+      }
     }
     if (r.affinityReward > 0) npcSystem.increaseAll(r.affinityReward);
     if (r.itemReward.isNotEmpty) addItem(r.itemReward);
@@ -1294,6 +1336,11 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
     if (reward.$3 == 'iron_sword' || reward.$3 == 'legendary_hoe') {
       weaponBonus += reward.$3 == 'legendary_hoe' ? 40 : 10;
     }
+    if (lv > 0) {
+      effects.levelUp(player.x, player.y - 30);
+      audio.playSfx('levelup');
+    }
+    audio.playSfx('coin');
     setSheetState(() {});
     setState(() {});
     showToast(
@@ -1337,6 +1384,12 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
     player.addGold(gold);
     final int lv = player.gainExp(big ? 20 : 8);
     questSystem.onFish(fishId);
+    effects.fishSplash(player.x, GameWorldState.kHorizonY + 40);
+    audio.playSfx('fish');
+    if (lv > 0) {
+      effects.levelUp(player.x, player.y - 30);
+      audio.playSfx('levelup');
+    }
     showToast('钓到了${big ? '一条大鱼！' : '一条鱼'}+$gold 金币${lv > 0 ? '，升到 Lv.${player.level}' : ''}',
         duration: 3);
     setState(() {});
@@ -1464,6 +1517,12 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
         final int lv = player.gainExp(res.expGain);
         questSystem.onKill(m.type.id);
         if (res.dropped.isNotEmpty) addItem(res.dropped);
+        effects.harvest(player.x, player.y);
+        audio.playSfx('harvest');
+        if (lv > 0) {
+          effects.levelUp(player.x, player.y - 30);
+          audio.playSfx('levelup');
+        }
         showToast(
           '击败了${m.name}！+${res.goldGain} 金币、+${res.expGain} 经验'
           '${res.dropped.isNotEmpty ? '、获得${kItemNames[res.dropped] ?? res.dropped}' : ''}'
@@ -1490,9 +1549,13 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
       final OreType? oreBefore = cell.ore;
       final int value = f.mine(col, row);
       player.playAction(PlayerAction.hoeing, duration: 0.4);
+      effects.hoe(player.x, player.y);
+      audio.playSfx('hoe');
       if (value > 0) {
         player.addGold(value);
         player.gainExp(6);
+        effects.coin(player.x, player.y - 20);
+        audio.playSfx('coin');
         showToast(
             '采集成功！+$value 金币${oreBefore != null ? '（${oreBefore.label}）' : ''}',
             duration: 2);
@@ -1571,6 +1634,30 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
                           ),
                         ),
                       ),
+                      Positioned(
+                        right: 6,
+                        top: 6,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            _AudioToggle(
+                              icon: audio.bgmEnabled ? Icons.music_note : Icons.music_off,
+                              onTap: () async {
+                                await audio.toggleBgm();
+                                setState(() {});
+                              },
+                            ),
+                            const SizedBox(width: 4),
+                            _AudioToggle(
+                              icon: audio.sfxEnabled ? Icons.volume_up : Icons.volume_off,
+                              onTap: () {
+                                audio.toggleSfx();
+                                setState(() {});
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
                       if (toast.isNotEmpty)
                         Positioned(
                           left: 12,
@@ -1626,10 +1713,12 @@ class _FarmPainter extends CustomPainter {
       ..translate(-cam.x, -cam.y);
 
     _drawSkyAndGround(canvas);
+    _drawClouds(canvas);
     _drawVillage(canvas);
     _drawField(canvas);
     _drawNpcs(canvas);
     _drawPlayer(canvas);
+    state.effects.draw(canvas);
 
     canvas.restore();
 
@@ -1684,13 +1773,51 @@ class _FarmPainter extends CustomPainter {
     // 水域
     final Paint water = Paint()..color = const Color(0xFF62B6E8);
     for (final (double a, double b) in GameWorldState.kWaterSpots) {
+      final double wcx = (a + b) / 2;
+      final double wcy = GameWorldState.kHorizonY + 40;
       canvas.drawOval(
-        Rect.fromCenter(
-            center: Offset((a + b) / 2, GameWorldState.kHorizonY + 40),
-            width: b - a,
-            height: 90),
+        Rect.fromCenter(center: Offset(wcx, wcy), width: b - a, height: 90),
         water,
       );
+      // 水面涟漪动画
+      for (int i = 0; i < 3; i++) {
+        final double phase = (state.animTime * 0.6 + i * 0.33) % 1.0;
+        final double rw = phase * (b - a) * 0.35;
+        final int alpha = ((1 - phase) * 90).round();
+        canvas.drawOval(
+          Rect.fromCenter(center: Offset(wcx, wcy), width: rw * 2, height: rw),
+          Paint()
+            ..color = Color((alpha << 24) | 0x00FFFFFF)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5,
+        );
+      }
+      // 水面闪光
+      final double sparkle = (math.sin(state.animTime * 3) + 1) * 0.5;
+      canvas.drawCircle(
+        Offset(wcx - (b - a) * 0.2, wcy - 10),
+        2 + sparkle * 2,
+        Paint()..color = Color(((0x88 + (sparkle * 64).round()) << 24) | 0x00FFFFFF),
+      );
+    }
+  }
+
+  /// 绘制漂移云朵。
+  void _drawClouds(Canvas canvas) {
+    final Paint cloud = Paint()..color = const Color(0xCCFFFFFF);
+    const double span = GameWorldState.kWorldWidth + 400;
+    for (int i = 0; i < 7; i++) {
+      final double drift = (state.animTime * (12 + i * 3) + i * 900) % span - 200;
+      final double cy = 40 + (i % 3) * 55;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(drift, cy, 100, 32),
+          const Radius.circular(16),
+        ),
+        cloud,
+      );
+      canvas.drawCircle(Offset(drift + 30, cy + 4), 22, cloud);
+      canvas.drawCircle(Offset(drift + 65, cy + 8), 18, cloud);
     }
   }
 
@@ -1809,42 +1936,49 @@ class _FarmPainter extends CustomPainter {
     final double growth = c.stages <= 1 ? 1 : stage / (c.stages - 1);
     final double h = 4 + growth * (r.height - 10);
 
+    // 摇摆偏移（风效，随位置相位错开）
+    final double sway = math.sin(state.animTime * 2.2 + t.col * 0.6 + t.row * 0.4) * 1.8 * growth;
+    final double topX = cx + sway;
+    final double topY = bottom - h;
+
     // 茎
     final Paint stem = Paint()
       ..color = const Color(0xFF4E8A3A)
       ..strokeWidth = 2;
-    canvas.drawLine(Offset(cx, bottom), Offset(cx, bottom - h), stem);
+    canvas.drawLine(Offset(cx, bottom), Offset(topX, topY), stem);
 
     // 叶
     if (growth > 0.25) {
       final Paint leaf = Paint()..color = const Color(0xFF6FBF4A);
       canvas.drawOval(
-          Rect.fromCenter(center: Offset(cx - 5, bottom - h * 0.55), width: 9, height: 5), leaf);
+          Rect.fromCenter(center: Offset(topX - 5, bottom - h * 0.55), width: 9, height: 5), leaf);
       canvas.drawOval(
-          Rect.fromCenter(center: Offset(cx + 5, bottom - h * 0.45), width: 9, height: 5), leaf);
+          Rect.fromCenter(center: Offset(topX + 5, bottom - h * 0.45), width: 9, height: 5), leaf);
     }
 
     // 果实（按阶段逐步显色，成熟时最大最亮）
     if (growth > 0.5) {
       final double radius = 2.5 + growth * 4.5;
       canvas.drawCircle(
-        Offset(cx, bottom - h),
+        Offset(topX, topY),
         radius,
         Paint()..color = colorWithAlpha(c.color, t.state == TileState.grown ? 1 : 0.55),
       );
     }
 
-    // 成熟高亮
+    // 成熟高亮（脉冲呼吸）
     if (t.state == TileState.grown) {
+      final double pulse = (math.sin(state.animTime * 3.5) + 1) * 0.5;
       canvas.drawCircle(
-        Offset(cx, bottom - h),
-        9,
+        Offset(topX, topY),
+        9 + pulse * 2,
         Paint()
-          ..color = const Color(0x66FFFFFF)
+          ..color = Color(((0x44 + (pulse * 0x33).round()) << 24) | 0x00FFFFFF)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5,
       );
-      _text(canvas, '!', Offset(cx - 2, bottom - h - 20),
+      final double bounce = math.sin(state.animTime * 4) * 2;
+      _text(canvas, '!', Offset(topX - 2, topY - 20 + bounce),
           color: const Color(0xFFFFE066), size: 11, bold: true);
     } else if (t.state == TileState.planted) {
       // 生长进度条
@@ -1861,7 +1995,8 @@ class _FarmPainter extends CustomPainter {
   void _drawNpcs(Canvas canvas) {
     for (final Npc n in NpcData.all) {
       final double nx = n.xAtHour(state.hourOfDay);
-      const double ny = GameWorldState.kHorizonY + 26;
+      final double bob = math.sin(state.animTime * 2.5 + n.x * 0.01) * 1.5;
+      final double ny = GameWorldState.kHorizonY + 26 + bob;
       final Color col = Color(n.color);
 
       // 身体
@@ -2157,4 +2292,28 @@ class _MinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MinePainter oldDelegate) => true;
+}
+
+/// 音频开关小按钮。
+class _AudioToggle extends StatelessWidget {
+  const _AudioToggle({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: const Color(0x66000000),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Icon(icon, size: 16, color: Colors.white),
+      ),
+    );
+  }
 }
