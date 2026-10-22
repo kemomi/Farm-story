@@ -1701,6 +1701,69 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
       ),
     );
   }
+
+  // ------------------------------------------------------------------ 存档/读档
+
+  /// 保存游戏进度。
+  Future<void> _saveGame() async {
+    try {
+      final bool success = await GameSaveHelper.saveFullGame(
+        player: player,
+        fields: fields,
+        npcSystem: npcSystem,
+        festivalSystem: festivalSystem,
+        questSystem: questSystem,
+        mineManager: mineManager,
+        gameMinutes: gameMinutes,
+        day: day,
+        seasonIndex: seasonIndex,
+        year: year,
+        bag: bag,
+        items: items,
+        inMine: inMine,
+      );
+      if (success) {
+        showToast('游戏已保存！', duration: 2);
+      } else {
+        showToast('保存失败，请重试', duration: 2);
+      }
+    } catch (e) {
+      showToast('保存出错：$e', duration: 2);
+    }
+  }
+
+  /// 加载游戏进度。
+  Future<void> _loadGame() async {
+    try {
+      final bool success = await GameSaveHelper.loadFullGame(
+        player: player,
+        fields: fields,
+        npcSystem: npcSystem,
+        festivalSystem: festivalSystem,
+        questSystem: questSystem,
+        mineManager: mineManager,
+      );
+      if (success) {
+        setState(() {
+          // 更新 UI 状态
+          if (inMine) {
+            final MineFloor? f = mineManager.current;
+            if (f != null) {
+              camera.setWorldSize(f.pixelWidth, f.pixelHeight);
+            }
+          } else {
+            camera.setWorldSize(kWorldWidth, kWorldHeight);
+          }
+          camera.snapTo(player.x, player.y);
+        });
+        showToast('游戏已加载！', duration: 2);
+      } else {
+        showToast('没有找到存档或加载失败', duration: 2);
+      }
+    } catch (e) {
+      showToast('加载出错：$e', duration: 2);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------- 绘制
@@ -2252,68 +2315,5 @@ class _MinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _MinePainter oldDelegate) => true;
-}
-
-// ------------------------------------------------------------------ 存档/读档
-
-/// 保存游戏进度。
-Future<void> _saveGame() async {
-  try {
-    final bool success = await GameSaveHelper.saveFullGame(
-      player: player,
-      fields: fields,
-      npcSystem: npcSystem,
-      festivalSystem: festivalSystem,
-      questSystem: questSystem,
-      mineManager: mineManager,
-      gameMinutes: gameMinutes,
-      day: day,
-      seasonIndex: seasonIndex,
-      year: year,
-      bag: bag,
-      items: items,
-      inMine: inMine,
-    );
-    if (success) {
-      showToast('游戏已保存！', duration: 2);
-    } else {
-      showToast('保存失败，请重试', duration: 2);
-    }
-  } catch (e) {
-    showToast('保存出错：$e', duration: 2);
-  }
-}
-
-/// 加载游戏进度。
-Future<void> _loadGame() async {
-  try {
-    final bool success = await GameSaveHelper.loadFullGame(
-      player: player,
-      fields: fields,
-      npcSystem: npcSystem,
-      festivalSystem: festivalSystem,
-      questSystem: questSystem,
-      mineManager: mineManager,
-    );
-    if (success) {
-      setState(() {
-        // 更新 UI 状态
-        if (inMine) {
-          final MineFloor? f = mineManager.current;
-          if (f != null) {
-            camera.setWorldSize(f.pixelWidth, f.pixelHeight);
-          }
-        } else {
-          camera.setWorldSize(kWorldWidth, kWorldHeight);
-        }
-        camera.snapTo(player.x, player.y);
-      });
-      showToast('游戏已加载！', duration: 2);
-    } else {
-      showToast('没有找到存档或加载失败', duration: 2);
-    }
-  } catch (e) {
-    showToast('加载出错：$e', duration: 2);
-  }
 }
 

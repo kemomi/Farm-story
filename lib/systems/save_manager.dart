@@ -238,9 +238,9 @@ class GameSaveHelper {
     required bool inMine,
   }) async {
     final saveData = GameSaveData(
-      player: player.toJson(),
+      player: <String, dynamic>{'x': player.x, 'y': player.y, 'gold': player.gold, 'stamina': player.stamina, 'maxStamina': player.maxStamina, 'level': player.level, 'exp': player.exp},
       fields: fields.tiles
-          .map((FieldTile t) => <String, dynamic{
+          .map((FieldTile t) => <String, dynamic>{
         'col': t.col,
         'row': t.row,
         'state': t.state.name,
@@ -254,9 +254,9 @@ class GameSaveHelper {
       npcSystem: npcSystem.save(),
       festivalSystem: festivalSystem.save(),
       questSystem: questSystem.save(),
-      mineManager: <String, dynamic{
+      mineManager: <String, dynamic>{
         'currentFloor': mineManager.currentFloor,
-        'clearState': mineManager.clearState,
+        'clearState': <String, dynamic>{for (final e in mineManager.clearState.entries) e.key.toString(): e.value},
       },
       gameMinutes: gameMinutes,
       day: day,
