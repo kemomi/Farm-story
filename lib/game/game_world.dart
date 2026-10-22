@@ -18,6 +18,8 @@ import '../models/mine_floor.dart';
 import '../models/monster.dart';
 import '../models/npc.dart';
 import '../models/player.dart';
+import '../systems/save_manager.dart';
+import '../systems/tutorial_system.dart';
 import '../systems/festival_system.dart';
 import '../systems/npc_system.dart';
 import '../systems/quest_system.dart';
@@ -463,9 +465,16 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
           showToast('当前田块状态：${tile.state.label}', duration: 2);
         }
         break;
+      case ToolType.water:
+        final FieldResult r = fields.water(col, row, hasStamina: _canUseStamina);
+        _applyFieldResult(r, col, row);
+        if (r.success) {
+          player.playAction(PlayerAction.hoeing);
+        }
+        break;
       case ToolType.npc:
       case ToolType.bag:
-        showToast('点击田地请使用锄地或播种工具', duration: 2);
+        showToast('点击田地请使用锄地、播种或浇水工具', duration: 2);
         break;
     }
   }
@@ -541,11 +550,12 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
     switch (t) {
       case ToolType.hoe:
       case ToolType.seed:
+      case ToolType.water:
         setState(() => selectedTool = t);
         if (t == ToolType.seed && selectedCrop == null) {
           showToast('先选择种子：点击「工具」→「种子商店」', duration: 3);
         } else {
-          showToast(t == ToolType.hoe ? '锄地模式：点击空地开垦，点击成熟作物收获' : '播种模式：${selectedCrop?.name ?? ''}，点击已开垦土地播种', duration: 3);
+          showToast(t == ToolType.hoe ? '锄地模式：点击空地开垦，点击成熟作物收获' : t == ToolType.water ? '浇水模式：点击生长中的作物浇水加速' : '播种模式：${selectedCrop?.name ?? ''}，点击已开垦土地播种', duration: 3);
         }
         break;
       case ToolType.tool:
@@ -1532,6 +1542,7 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
       if (fields.harvestableCount > 0) ToolType.hoe: '${fields.harvestableCount}',
       if (bagCount > 0) ToolType.bag: '$bagCount',
       if (questSystem.claimable.isNotEmpty) ToolType.tool: '${questSystem.claimable.length}',
+      if (fields.witheredCount > 0) ToolType.water: '${fields.witheredCount}',
     };
 
     return Scaffold(
@@ -1585,6 +1596,90 @@ class GameWorldState extends State<GameWorld> with SingleTickerProviderStateMixi
                             child: Text(
                               toast,
                               style: const TextStyle(color: Colors.white, fontSize: 12),
+                            ),
+                          ),
+                        ),
+                        // 保存按钮
+                        Positioned(
+                          right: 12,
+                          top: 40,
+                          child: GestureDetector(
+                            onTap: () => _saveGame(),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xCC10240F),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFF9BE36B), width: 1),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Icon(Icons.save, size: 14, color: Color(0xFF9BE36B)),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    '保存',
+                                    style: TextStyle(color: Colors.white, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        // 加载按钮
+                        Positioned(
+                          right: 12,
+                          top: 72,
+                          child: GestureDetector(
+                            onTap: () => _loadGame(),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xCC10240F),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Color(0xFF7BD3F0), width: 1),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Icon(Icons.download, size: 14, color: Color(0xFF7BD3F0)),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    '加载',
+                                    style: TextStyle(color: Colors.white, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        // 帮助按钮
+                        Positioned(
+                          right: 12,
+                          top: 104,
+                          child: GestureDetector(
+                            onTap: () => showDialog<void>(
+                              context: context,
+                              builder: (BuildContext ctx) => const HelpPanel(),
+                            ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xCC10240F),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Color(0xFFE8F4FF), width: 1),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Icon(Icons.help, size: 14, color: Color(0xFFE8F4FF)),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    '帮助',
+                                    style: TextStyle(color: Colors.white, fontSize: 12),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -2158,3 +2253,67 @@ class _MinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _MinePainter oldDelegate) => true;
 }
+
+// ------------------------------------------------------------------ 存档/读档
+
+/// 保存游戏进度。
+Future<void> _saveGame() async {
+  try {
+    final bool success = await GameSaveHelper.saveFullGame(
+      player: player,
+      fields: fields,
+      npcSystem: npcSystem,
+      festivalSystem: festivalSystem,
+      questSystem: questSystem,
+      mineManager: mineManager,
+      gameMinutes: gameMinutes,
+      day: day,
+      seasonIndex: seasonIndex,
+      year: year,
+      bag: bag,
+      items: items,
+      inMine: inMine,
+    );
+    if (success) {
+      showToast('游戏已保存！', duration: 2);
+    } else {
+      showToast('保存失败，请重试', duration: 2);
+    }
+  } catch (e) {
+    showToast('保存出错：$e', duration: 2);
+  }
+}
+
+/// 加载游戏进度。
+Future<void> _loadGame() async {
+  try {
+    final bool success = await GameSaveHelper.loadFullGame(
+      player: player,
+      fields: fields,
+      npcSystem: npcSystem,
+      festivalSystem: festivalSystem,
+      questSystem: questSystem,
+      mineManager: mineManager,
+    );
+    if (success) {
+      setState(() {
+        // 更新 UI 状态
+        if (inMine) {
+          final MineFloor? f = mineManager.current;
+          if (f != null) {
+            camera.setWorldSize(f.pixelWidth, f.pixelHeight);
+          }
+        } else {
+          camera.setWorldSize(kWorldWidth, kWorldHeight);
+        }
+        camera.snapTo(player.x, player.y);
+      });
+      showToast('游戏已加载！', duration: 2);
+    } else {
+      showToast('没有找到存档或加载失败', duration: 2);
+    }
+  } catch (e) {
+    showToast('加载出错：$e', duration: 2);
+  }
+}
+

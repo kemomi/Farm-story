@@ -1,6 +1,6 @@
 /// 底栏 UI
 ///
-/// 包含锄地、播种、工具、NPC、背包五个按钮，半透明背景，高度 44px。
+/// 包含锄地、播种、浇水、工具、NPC、背包六个按钮，半透明背景，高度 44px。
 library;
 
 import 'package:flutter/material.dart';
@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 enum ToolType {
   hoe('锄地', Icons.agriculture),
   seed('播种', Icons.grass),
+  water('浇水', Icons.water),
   tool('工具', Icons.build),
   npc('NPC', Icons.people),
   bag('背包', Icons.backpack);
